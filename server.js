@@ -23,6 +23,8 @@ server.on('connection', (ws, req) => {
         });
 
         const { signed_url } = await response.json();
+        const name = data.customParameters?.name || 'Guest';
+        const phone = data.customParameters?.phone || '';
 
         elevenWs = new WebSocket(signed_url);
 
@@ -32,6 +34,8 @@ server.on('connection', (ws, req) => {
             dynamic_variables: {
               user_name: 'Caller',
               user_id: data.start.callSid,
+              name: name,
+              phone: phone,
             }
           };
           elevenWs.send(JSON.stringify(initConfig));
