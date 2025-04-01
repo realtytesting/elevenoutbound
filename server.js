@@ -23,8 +23,9 @@ server.on('connection', (ws, req) => {
         });
 
         const { signed_url } = await response.json();
-        const name = data.customParameters?.name || 'Guest';
-        const phone = data.customParameters?.phone || '';
+        const name = data.start?.customParameters?.name || 'Guest';
+        const phone = data.start?.customParameters?.phone || '';
+
 
         elevenWs = new WebSocket(signed_url);
 
