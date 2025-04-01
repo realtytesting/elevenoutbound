@@ -37,6 +37,7 @@ server.on('connection', (ws, req) => {
               user_id: data.start.callSid,
               name: name,
               phone: phone,
+              system__called_number: phone,
             }
           };
           elevenWs.send(JSON.stringify(initConfig));
