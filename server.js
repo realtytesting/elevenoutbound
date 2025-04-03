@@ -17,15 +17,21 @@ server.on('connection', (ws, req) => {
         const agentId = data.start?.customParameters?.agent_id || process.env.ELEVENLABS_AGENT_ID;
         const apiKey = process.env.ELEVENLABS_API_KEY;
 
-        // Get signed URL from ElevenLabs
         const response = await fetch(`https://api.elevenlabs.io/v1/convai/conversation/get_signed_url?agent_id=${agentId}`, {
           headers: { 'xi-api-key': apiKey },
         });
 
-        const { signed_url } = await response.json();
+        const json = await response.json();
+        const signed_url = json?.signed_url;
+
+        if (!signed_url) {
+          console.error('❌ Failed to fetch signed ElevenLabs URL');
+          ws.close();
+          return;
+        }
+
         const name = data.start?.customParameters?.name || 'Guest';
         const phone = data.start?.customParameters?.phone || '';
-
 
         elevenWs = new WebSocket(signed_url);
 
@@ -45,8 +51,8 @@ server.on('connection', (ws, req) => {
 
         elevenWs.on('message', (message) => {
           const res = JSON.parse(message);
-          if (res.audio?.chunk || res.audio_event?.audio_base_64) {
-            const payload = res.audio?.chunk || res.audio_event.audio_base_64;
+          const payload = res.audio?.chunk || res.audio_event?.audio_base_64;
+          if (payload) {
             ws.send(JSON.stringify({
               event: 'media',
               streamSid: data.start.streamSid,
@@ -55,13 +61,16 @@ server.on('connection', (ws, req) => {
           }
         });
 
-        elevenWs.on('close', () => console.log('❌ ElevenLabs connection closed'));
+        elevenWs.on('close', () => {
+          console.log('❌ ElevenLabs connection closed');
+        });
       }
 
       if (data.event === 'media') {
-        if (elevenWs?.readyState === WebSocket.OPEN) {
+        const payload = data.media?.payload;
+        if (payload && elevenWs?.readyState === WebSocket.OPEN) {
           elevenWs.send(JSON.stringify({
-            user_audio_chunk: Buffer.from(data.media.payload, 'base64').toString('base64')
+            user_audio_chunk: Buffer.from(payload, 'base64').toString('base64')
           }));
         }
       }
