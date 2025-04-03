@@ -33,6 +33,9 @@ server.on('connection', (ws, req) => {
         }
         const name = data.start?.customParameters?.name || 'Guest';
         const phone = data.start?.customParameters?.phone || '';
+        // Get prompt and first_message from the custom parameters (set in TwiML)
+        const prompt = data.start?.customParameters?.prompt || 'Default prompt';
+        const firstMessage = data.start?.customParameters?.first_message || 'Default first message';
 
         // Connect to ElevenLabs WebSocket with the signed URL
         elevenWs = new WebSocket(signed_url);
@@ -40,23 +43,26 @@ server.on('connection', (ws, req) => {
         elevenWs.on('open', () => {
           console.log('🎤 ElevenLabs WebSocket connected');
 
-          // Send the conversation initiation data
+          // Send the conversation initiation payload including prompt & first_message
           const initConfig = {
             type: 'conversation_initiation_client_data',
             dynamic_variables: {
               user_name: name || 'Caller',
               phone: phone,
-              system__called_number: phone
+              system__called_number: phone,
+              prompt: prompt,
+              first_message: firstMessage
             }
           };
 
+          console.log('➡️ Sending initiation payload:', initConfig);
           elevenWs.send(JSON.stringify(initConfig));
         });
 
         elevenWs.on('message', (message) => {
-          console.log('🎧 ElevenLabs message:', message);
+          console.log('🎧 ElevenLabs message:', message.toString());
           const res = JSON.parse(message);
-          if (res.audio?.chunk || res.audio_event?.audio_base_64) {
+          if (res.audio?.chunk || (res.audio_event && res.audio_event.audio_base_64)) {
             const payload = res.audio?.chunk || res.audio_event.audio_base_64;
             ws.send(JSON.stringify({
               event: 'media',
