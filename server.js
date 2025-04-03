@@ -14,10 +14,11 @@ server.on('connection', (ws, req) => {
 
       if (data.event === 'start') {
         console.log('✅ Call started:', data.start.callSid);
-        const agentId = process.env.ELEVENLABS_AGENT_ID;
+        // Use agent_id from custom parameters if available, else fallback to env variable.
+        const agentId = data.start?.customParameters?.agent_id || process.env.ELEVENLABS_AGENT_ID;
         const apiKey = process.env.ELEVENLABS_API_KEY;
 
-        // Get signed URL from ElevenLabs
+        // Get signed URL from ElevenLabs using the dynamic agent id
         const response = await fetch(`https://api.elevenlabs.io/v1/convai/conversation/get_signed_url?agent_id=${agentId}`, {
           headers: { 'xi-api-key': apiKey },
         });
@@ -25,7 +26,6 @@ server.on('connection', (ws, req) => {
         const { signed_url } = await response.json();
         const name = data.start?.customParameters?.name || 'Guest';
         const phone = data.start?.customParameters?.phone || '';
-
 
         elevenWs = new WebSocket(signed_url);
 
