@@ -14,7 +14,7 @@ server.on('connection', (ws, req) => {
 
       if (data.event === 'start') {
         console.log('✅ Call started:', data.start.callSid);
-        const agentId = process.env.ELEVENLABS_AGENT_ID;
+        const agentId = data.start?.customParameters?.agent_id || process.env.ELEVENLABS_AGENT_ID;
         const apiKey = process.env.ELEVENLABS_API_KEY;
 
         // Get signed URL from ElevenLabs
