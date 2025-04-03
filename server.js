@@ -14,18 +14,21 @@ server.on('connection', (ws, req) => {
 
       if (data.event === 'start') {
         console.log('✅ Call started:', data.start.callSid);
-        // Use agent_id from custom parameters if available, else fallback to env variable.
+        // Use agent_id from customParameters if available, else fallback to environment variable.
         const agentId = data.start?.customParameters?.agent_id || process.env.ELEVENLABS_AGENT_ID;
         const apiKey = process.env.ELEVENLABS_API_KEY;
 
-        // Get signed URL from ElevenLabs using the dynamic agent id
+        // Request the signed URL from ElevenLabs using the dynamic agent id
         const response = await fetch(`https://api.elevenlabs.io/v1/convai/conversation/get_signed_url?agent_id=${agentId}`, {
           headers: { 'xi-api-key': apiKey },
         });
 
         const { signed_url } = await response.json();
+        // Retrieve additional parameters (prompt and first_message) from customParameters, with fallbacks.
         const name = data.start?.customParameters?.name || 'Guest';
         const phone = data.start?.customParameters?.phone || '';
+        const prompt = data.start?.customParameters?.prompt || 'Default prompt';
+        const firstMessage = data.start?.customParameters?.first_message || 'Default first message';
 
         elevenWs = new WebSocket(signed_url);
 
@@ -38,8 +41,11 @@ server.on('connection', (ws, req) => {
               name: name,
               phone: phone,
               system__called_number: phone,
+              prompt: prompt,
+              first_message: firstMessage
             }
           };
+          console.log('➡️ Sending initiation payload:', initConfig);
           elevenWs.send(JSON.stringify(initConfig));
         });
 
@@ -53,6 +59,10 @@ server.on('connection', (ws, req) => {
               media: { payload }
             }));
           }
+        });
+
+        elevenWs.on('error', (err) => {
+          console.error('🚨 ElevenLabs WebSocket error:', err);
         });
 
         elevenWs.on('close', () => console.log('❌ ElevenLabs connection closed'));
@@ -71,7 +81,6 @@ server.on('connection', (ws, req) => {
         if (elevenWs?.readyState === WebSocket.OPEN) elevenWs.close();
         ws.close();
       }
-
     } catch (err) {
       console.error('❌ Error:', err);
     }
