@@ -1,6 +1,6 @@
 const WebSocket = require('ws');
 const fetch = require('node-fetch');
-require('dotenv').config(); // ✅ Make sure this line exists and .env is setup
+require('dotenv').config();
 
 const PORT = process.env.PORT || 10000;
 const server = new WebSocket.Server({ port: PORT });
@@ -16,14 +16,13 @@ server.on('connection', (twilioWs) => {
     try {
       const data = JSON.parse(msg);
 
-      // 📞 Start event from Twilio
+      // 📞 Call Start
       if (data.event === 'start') {
         console.log('✅ Call started:', data.start.callSid);
 
         const agentId = data.start?.customParameters?.agent_id || process.env.ELEVENLABS_AGENT_ID;
         const apiKey = process.env.ELEVENLABS_API_KEY;
 
-        // ✅ Fetch signed URL from ElevenLabs
         const response = await fetch(`https://api.elevenlabs.io/v1/convai/conversation/get_signed_url?agent_id=${agentId}`, {
           headers: { 'xi-api-key': apiKey }
         });
@@ -32,30 +31,28 @@ server.on('connection', (twilioWs) => {
         const signedUrl = result?.signed_url;
 
         if (!signedUrl) {
-          console.error('❌ Could not fetch signed ElevenLabs URL:', result);
+          console.error('❌ Failed to get signed URL:', result);
           twilioWs.close();
           return;
         }
 
-        // 🔗 Connect to ElevenLabs WebSocket
         elevenWs = new WebSocket(signedUrl);
 
         elevenWs.on('open', () => {
           console.log('🟢 Connected to ElevenLabs');
 
-          const initData = {
+          const init = {
             type: 'conversation_initiation_client_data',
             dynamic_variables: {
-              user_name: data.start?.customParameters?.name || 'Caller',
+              user_name: 'Caller',
               user_id: data.start.callSid,
-              phone: data.start?.customParameters?.phone || '',
-              system__called_number: data.start?.customParameters?.phone || ''
+              phone: data.start?.customParameters?.phone || ''
             }
           };
 
-          elevenWs.send(JSON.stringify(initData));
+          elevenWs.send(JSON.stringify(init));
 
-          // Optional: keep Twilio stream alive with dummy payload
+          // ✅ Dummy audio to keep connection alive
           twilioWs.send(JSON.stringify({
             event: 'media',
             streamSid: data.start.streamSid,
@@ -68,50 +65,48 @@ server.on('connection', (twilioWs) => {
         elevenWs.on('message', (msg) => {
           try {
             const parsed = JSON.parse(msg);
-            const audio = parsed.audio?.chunk || parsed.audio_event?.audio_base_64;
-            if (audio) {
+            const payload = parsed.audio?.chunk || parsed.audio_event?.audio_base_64;
+
+            if (payload) {
               twilioWs.send(JSON.stringify({
                 event: 'media',
                 streamSid: data.start.streamSid,
-                media: { payload: audio }
+                media: { payload }
               }));
+            } else {
+              console.log('ℹ️ ElevenLabs non-audio message:', parsed);
             }
           } catch (err) {
-            console.error('❌ Error parsing ElevenLabs message:', err);
+            console.error('❌ Parse error:', err);
           }
         });
 
-        elevenWs.on('close', () => {
-          console.log('🔌 ElevenLabs WebSocket closed');
-        });
-
-        elevenWs.on('error', (err) => {
-          console.error('🔥 ElevenLabs WebSocket error:', err);
-        });
+        elevenWs.on('close', () => console.log('🔌 ElevenLabs closed'));
+        elevenWs.on('error', (err) => console.error('🔥 ElevenLabs error:', err));
       }
 
-      // 🎤 Media from Twilio → send to ElevenLabs
-      if (data.event === 'media' && elevenWs?.readyState === WebSocket.OPEN) {
-        elevenWs.send(JSON.stringify({
-          user_audio_chunk: Buffer.from(data.media.payload, 'base64').toString('base64')
-        }));
+      // 🎤 Audio from Twilio
+      if (data.event === 'media') {
+        if (data.media?.payload && elevenWs?.readyState === WebSocket.OPEN) {
+          elevenWs.send(JSON.stringify({
+            user_audio_chunk: Buffer.from(data.media.payload, 'base64').toString('base64')
+          }));
+        }
       }
 
-      // 🛑 Call stopped
+      // 🛑 Stop call
       if (data.event === 'stop') {
-        console.log('🛑 Twilio call ended');
+        console.log('🛑 Call ended');
         if (elevenWs?.readyState === WebSocket.OPEN) elevenWs.close();
         twilioWs.close();
       }
-
     } catch (err) {
-      console.error('❌ Error handling Twilio message:', err);
+      console.error('❌ WebSocket Error:', err);
     }
   });
 
-  // Clean up on Twilio disconnect
   twilioWs.on('close', () => {
-    console.log('❌ Twilio WebSocket disconnected');
+    console.log('❌ Twilio disconnected');
     if (elevenWs?.readyState === WebSocket.OPEN) elevenWs.close();
   });
 });
