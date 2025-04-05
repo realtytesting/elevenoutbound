@@ -2,112 +2,101 @@ const WebSocket = require('ws');
 const fetch = require('node-fetch');
 require('dotenv').config();
 
-const server = new WebSocket.Server({ port: process.env.PORT || 10000 });
+const PORT = process.env.PORT || 10000;
+const server = new WebSocket.Server({ port: PORT });
 
-server.on('connection', (ws) => {
+console.log(`🟢 WebSocket server running on port ${PORT}`);
+
+server.on('connection', (twilioWs) => {
   console.log('🔌 Twilio WebSocket connected');
 
   let elevenWs;
 
-  ws.on('message', async (msg) => {
+  twilioWs.on('message', async (msg) => {
     try {
       const data = JSON.parse(msg);
 
-      // Start event
       if (data.event === 'start') {
-        console.log('✅ Call started:', data.start.callSid);
-
         const agentId = data.start?.customParameters?.agent_id || process.env.ELEVENLABS_AGENT_ID;
-        const apiKey = process.env.ELEVENLABS_API_KEY;
+        const apiKey  = process.env.ELEVENLABS_API_KEY;
 
-        // Step 1: Get signed URL from ElevenLabs
         const response = await fetch(`https://api.elevenlabs.io/v1/convai/conversation/get_signed_url?agent_id=${agentId}`, {
           headers: { 'xi-api-key': apiKey }
         });
 
         const json = await response.json();
-        const signed_url = json?.signed_url;
+        const signedUrl = json?.signed_url;
 
-        if (!signed_url) {
+        if (!signedUrl) {
           console.error('❌ Failed to get ElevenLabs signed URL');
-          ws.close();
+          twilioWs.close();
           return;
         }
 
-        elevenWs = new WebSocket(signed_url);
+        elevenWs = new WebSocket(signedUrl);
 
         elevenWs.on('open', () => {
-          console.log('🟢 ElevenLabs connected');
+          console.log('🟢 Connected to ElevenLabs');
 
-          const name = data.start?.customParameters?.name || 'Caller';
-          const phone = data.start?.customParameters?.phone || '';
-
-          const initMessage = {
+          const initPayload = {
             type: 'conversation_initiation_client_data',
             dynamic_variables: {
-              user_name: name,
-              user_id: data.start.callSid,
-              phone: phone
+              user_name: 'Caller',
+              phone: data.start?.customParameters?.phone || '',
+              user_id: data.start.callSid
             }
           };
 
-          elevenWs.send(JSON.stringify(initMessage));
+          elevenWs.send(JSON.stringify(initPayload));
 
-          // Optional: dummy payload to keep Twilio stream alive
-          ws.send(JSON.stringify({
+          // Optional: Keep Twilio alive with dummy audio
+          twilioWs.send(JSON.stringify({
             event: 'media',
             streamSid: data.start.streamSid,
-            media: {
-              payload: 'UklGRiQAAABXQVZFZm10IBAAAAABAAEAIlYAAESsAAACABAAZGF0YQAAAAA='
-            }
+            media: { payload: 'UklGRiQAAABXQVZFZm10IBAAAAABAAEAIlYAAESsAAACABAAZGF0YQAAAAA=' }
           }));
         });
 
-        elevenWs.on('message', (message) => {
-          const parsed = JSON.parse(message);
-          const payload = parsed.audio?.chunk || parsed.audio_event?.audio_base_64;
+        elevenWs.on('message', (msg) => {
+          try {
+            const parsed = JSON.parse(msg);
+            const payload = parsed.audio?.chunk || parsed.audio_event?.audio_base_64;
 
-          if (payload) {
-            ws.send(JSON.stringify({
-              event: 'media',
-              streamSid: data.start.streamSid,
-              media: { payload }
-            }));
+            if (payload) {
+              twilioWs.send(JSON.stringify({
+                event: 'media',
+                streamSid: data.start.streamSid,
+                media: { payload }
+              }));
+            }
+          } catch (err) {
+            console.error('🔴 ElevenLabs message parse error:', err);
           }
         });
 
-        elevenWs.on('error', (err) => {
-          console.error('🔥 ElevenLabs error:', err);
-        });
-
         elevenWs.on('close', () => {
-          console.log('🔌 ElevenLabs closed');
+          console.log('🔌 ElevenLabs disconnected');
         });
       }
 
-      // Media event
-      if (data.event === 'media') {
-        const payload = data.media?.payload;
-        if (payload && elevenWs?.readyState === WebSocket.OPEN) {
-          elevenWs.send(JSON.stringify({
-            user_audio_chunk: Buffer.from(payload, 'base64').toString('base64')
-          }));
-        }
+      if (data.event === 'media' && elevenWs?.readyState === WebSocket.OPEN) {
+        elevenWs.send(JSON.stringify({
+          user_audio_chunk: Buffer.from(data.media.payload, 'base64').toString('base64')
+        }));
       }
 
-      // Stop event
       if (data.event === 'stop') {
-        console.log('🛑 Call ended');
+        console.log('🛑 Twilio call stopped');
         if (elevenWs?.readyState === WebSocket.OPEN) elevenWs.close();
-        ws.close();
+        twilioWs.close();
       }
 
     } catch (err) {
-      console.error('❌ Error in WS message:', err);
+      console.error('❌ Error handling message:', err);
     }
   });
 
-  ws.on('close', () => {
+  twilioWs.on('close', () => {
     console.log('❌ Twilio WebSocket closed');
     if (elevenWs?.readyState === WebSocket.OPEN) elevenWs.close();
   });
