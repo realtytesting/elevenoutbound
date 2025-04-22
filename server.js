@@ -42,24 +42,22 @@ server.on('connection', (twilioWs) => {
           console.log('🟢 Connected to ElevenLabs');
 
           const init = {
-              type: 'conversation_initiation_client_data',
-              dynamic_variables: {
-                user_name: 'Caller',
-                user_id: data.start.callSid,
-                phone: data.start?.customParameters?.phone || ''
-              },
-              {
-                "type": "conversation_initiation_client_data",
-                "conversation_config_override": {
-                  "agent": {
-                    "prompt": {
-                      "prompt": data.start?.customParameters?.prompt || ''
-                    },
-                    "first_message": data.start?.customParameters?.first_message || ''
-                  }
-                }
-              }
-            };
+                          type: 'conversation_initiation_client_data',
+                          dynamic_variables: {
+                            user_name: 'Caller',
+                            user_id: data.start.callSid,
+                            phone: data.start?.customParameters?.phone || ''
+                          },
+                          conversation_config_override: {
+                            agent: {
+                              prompt: {
+                                prompt: data.start?.customParameters?.prompt || ''
+                              },
+                              first_message: data.start?.customParameters?.first_message || ''
+                            }
+                          }
+                        };
+
 
 
           elevenWs.send(JSON.stringify(init));
